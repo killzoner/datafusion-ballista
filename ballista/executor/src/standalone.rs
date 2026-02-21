@@ -23,6 +23,7 @@
 use crate::metrics::LoggingMetricsCollector;
 use crate::{execution_loop, executor::Executor, flight_service::BallistaFlightService};
 use arrow_flight::flight_service_server::FlightServiceServer;
+use ballista_core::config::TaskSchedulingPolicy;
 use ballista_core::extension::SessionConfigExt;
 use ballista_core::registry::BallistaFunctionRegistry;
 use ballista_core::utils::{GrpcServerConfig, default_config_producer};
@@ -51,6 +52,7 @@ use uuid::Uuid;
 pub async fn new_standalone_executor_from_state(
     scheduler: SchedulerGrpcClient<Channel>,
     concurrent_tasks: usize,
+    scheduler_policy: TaskSchedulingPolicy,
     session_state: &SessionState,
 ) -> Result<()> {
     let logical = session_state.config().ballista_logical_extension_codec();
@@ -70,6 +72,7 @@ pub async fn new_standalone_executor_from_state(
     new_standalone_executor_from_builder(
         scheduler,
         concurrent_tasks,
+        scheduler_policy,
         config_producer,
         runtime_producer,
         codec,
@@ -88,6 +91,7 @@ pub async fn new_standalone_executor_from_state(
 pub async fn new_standalone_executor_from_builder(
     scheduler: SchedulerGrpcClient<Channel>,
     concurrent_tasks: usize,
+    scheduler_policy: TaskSchedulingPolicy,
     config_producer: ConfigProducer,
     runtime_producer: RuntimeProducer,
     codec: BallistaCodec,
@@ -143,7 +147,27 @@ pub async fn new_standalone_executor_from_builder(
             )),
     );
 
-    tokio::spawn(execution_loop::poll_loop(scheduler, executor, codec));
+    match scheduler_policy {
+        TaskSchedulingPolicy::PushStaged => {
+            todo!();
+            // service_handlers.push(
+            //     //If there is executor registration error during startup, return the error and stop early.
+            //     executor_server::startup(
+            //         scheduler.clone(),
+            //         opt.clone(),
+            //         executor.clone(),
+            //         default_codec,
+            //         stop_send,
+            //         &shutdown_notification,
+            //     )
+            //     .await?,
+            // );
+        }
+        _ => {
+            tokio::spawn(execution_loop::poll_loop(scheduler, executor, codec));
+        }
+    };
+
     Ok(())
 }
 
@@ -152,6 +176,7 @@ pub async fn new_standalone_executor_from_builder(
 pub async fn new_standalone_executor(
     scheduler: SchedulerGrpcClient<Channel>,
     concurrent_tasks: usize,
+    scheduler_policy: TaskSchedulingPolicy,
     codec: BallistaCodec,
 ) -> Result<()> {
     use ballista_core::extension::{
@@ -172,6 +197,7 @@ pub async fn new_standalone_executor(
     new_standalone_executor_from_builder(
         scheduler,
         concurrent_tasks,
+        scheduler_policy,
         Arc::new(default_config_producer),
         runtime_producer,
         codec,

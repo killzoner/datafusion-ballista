@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(feature = "standalone")]
+use ballista_core::config::TaskSchedulingPolicy;
 pub use ballista_core::extension::{SessionConfigExt, SessionStateExt};
 use ballista_core::serde::protobuf::scheduler_grpc_client::SchedulerGrpcClient;
 use datafusion::{
@@ -66,7 +68,9 @@ pub trait SessionContextExt {
     ///
     /// It wills start local ballista cluster with scheduler and executor.
     #[cfg(feature = "standalone")]
-    async fn standalone() -> datafusion::error::Result<SessionContext>;
+    async fn standalone(
+        scheduler_policy: TaskSchedulingPolicy,
+    ) -> datafusion::error::Result<SessionContext>;
 
     /// Creates a context for executing queries against a standalone Ballista scheduler instance
     /// with custom session state.
@@ -75,6 +79,7 @@ pub trait SessionContextExt {
     #[cfg(feature = "standalone")]
     async fn standalone_with_state(
         state: SessionState,
+        scheduler_policy: TaskSchedulingPolicy,
     ) -> datafusion::error::Result<SessionContext>;
 
     /// Creates a context for executing queries against a remote Ballista scheduler instance
@@ -129,8 +134,10 @@ impl SessionContextExt for SessionContext {
     #[cfg(feature = "standalone")]
     async fn standalone_with_state(
         state: SessionState,
+        scheduler_policy: TaskSchedulingPolicy,
     ) -> datafusion::error::Result<SessionContext> {
-        let scheduler_url = Extension::setup_standalone(Some(&state)).await?;
+        let scheduler_url =
+            Extension::setup_standalone(Some(&state), scheduler_policy).await?;
 
         let session_state = state.upgrade_for_ballista(scheduler_url)?;
 
@@ -143,10 +150,12 @@ impl SessionContextExt for SessionContext {
     }
 
     #[cfg(feature = "standalone")]
-    async fn standalone() -> datafusion::error::Result<Self> {
+    async fn standalone(
+        scheduler_policy: TaskSchedulingPolicy,
+    ) -> datafusion::error::Result<Self> {
         log::info!("Running in local mode. Scheduler will be run in-proc");
 
-        let scheduler_url = Extension::setup_standalone(None).await?;
+        let scheduler_url = Extension::setup_standalone(None, scheduler_policy).await?;
 
         let session_state = SessionState::new_ballista_state(scheduler_url)?;
 
@@ -177,6 +186,7 @@ impl Extension {
     #[cfg(feature = "standalone")]
     async fn setup_standalone(
         session_state: Option<&SessionState>,
+        scheduler_policy: TaskSchedulingPolicy,
     ) -> datafusion::error::Result<String> {
         use ballista_core::{serde::BallistaCodec, utils::default_config_producer};
 
@@ -215,6 +225,7 @@ impl Extension {
                 ballista_executor::new_standalone_executor(
                     scheduler,
                     concurrent_tasks,
+                    scheduler_policy,
                     BallistaCodec::default(),
                 )
                 .await
@@ -224,6 +235,7 @@ impl Extension {
                 ballista_executor::new_standalone_executor_from_state(
                     scheduler,
                     concurrent_tasks,
+                    scheduler_policy,
                     session_state,
                 )
                 .await
